@@ -1,0 +1,384 @@
+<html>
+<head>
+<title>Soldat Map Seach Tool</title>
+<script src='./sql.js/sql-wasm.js'></script>
+<style>
+body {
+  background-color:  DarkSeaGreen ;
+}
+.content {
+  width: 80%;
+  margin: auto;
+}
+#searchbar {
+  width : 100%;
+  background-color: #8F8FBC;
+  overflow: hidden;
+}
+#Pagination{
+  width : 100%;
+  height: auto;
+  background-color: #BC8F8F;
+  text-align: center;
+}
+#searchleft{
+  width:calc(50% - 1px);
+  border-right: 3px solid #BCBC8F;
+  float:left;
+}
+#searchright{
+  width:calc(50% - 2px);
+  float:left;
+}
+#searchbtarea{
+  border-top: 3px solid #BCBC8F;
+
+  float:left;
+  width : 100%;
+  text-align: center;
+}
+#dropdownC{
+  z-index: 1;
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  background-color: white;
+  display: none;
+}
+#creatornamearea{
+  display:inline-block;
+}
+.selecteditem{
+  background-color : rosybrown;
+  padding: 3px;
+  margin: 3px 3px;
+  text-align: center;
+    text-decoration: none;
+  display: inline-block;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.button {
+  background-color: #4CAF50; /* Green */
+  border: none;
+  color: white;
+  padding: 5px 5px;
+  margin: 5px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  transition-duration: 0.4s;
+  cursor: pointer;
+}
+.button:hover {
+  background-color: blue; /* Green */
+  color: red;
+}
+.button:active {
+  background-color: orange; /* Green */
+  color: blue;
+  border: 2px solid #BCBC8F;
+  padding: 3px 3px;
+}
+</style>
+<script>
+  var selectedCreator;
+  var creatorSelected = false;
+  var db;
+  const selectedTags = [];
+    config = {
+      locateFile: filename => `./sql.js/${filename}`
+    }
+    initSqlJs(config).then(function(SQL){
+    const xhr = new XMLHttpRequest();
+// For example: https://github.com/lerocha/chinook-database/raw/master/ChinookDatabase/DataSources/Chinook_Sqlite.sqlite
+   xhr.open('GET', './mapdb.db', true);
+   xhr.responseType = 'arraybuffer';
+
+   xhr.onload = e => {
+   const uInt8Array = new Uint8Array(xhr.response);
+   /*const*/ db = new SQL.Database(uInt8Array);
+   //const contents = db.exec("SELECT * FROM Maps");
+  // contents is now [{columns:['col1','col2',...], values:[[first row], [second row], ...]}]
+   const stmt = db.prepare("SELECT * FROM Maps WHERE Id BETWEEN $start AND $end ORDER BY Name LIMIT 50");
+      stmt.getAsObject({$start:1, $end:1}); // {col1:1, col2:111}
+
+      // Bind new values
+      stmt.bind({$start:1, $end:80});
+      while(stmt.step()) { //
+        const row = stmt.getAsObject();
+        console.log('Here is a row: ' + JSON.stringify(row));
+
+      }
+};
+xhr.send();
+});
+
+function onbtclick(){
+  const rrow = document.getElementsByClassName("maprow");
+  while(rrow[0]){
+    rrow[0].parentNode.removeChild(rrow[0]);
+  }
+  console.log("ontbtclick. length:"+selectedTags.length);
+  const name = "%"+document.getElementById("Name").value+"%";
+  const Gamemode = Number(document.getElementById("Gamemode").value);
+  const OficialGm = Number(document.getElementById("OficialGm").value);
+  let querry = "SELECT * FROM Maps WHERE Gamemode = $gamemode AND OficialGm = $oficialGm AND Name LIKE $name "+insertCreatorSql()+" ORDER BY Name LIMIT 50";
+  if(selectedTags.length > 0){
+    querry =
+      `select
+          t1.id,
+          t1.Name,
+          t1.CreatorId,
+          t1.Timestamp,
+          t1.Description
+      from
+          (
+          select
+              p.Name as Name,
+              p.Id as Id,
+      	p.CreatorId as CreatorId,
+      	p.Timestamp as Timestamp,
+      	p.Description as Description,
+        p.Gamemode as Gamemode,
+        p.OficialGm as OficialGm
+
+          from
+              Maps p inner join MapTags_Map ties
+          on
+              p.id=ties.MapId
+          where
+              ties.TagId in (${selectedTags.join(",")})
+          ) as t1
+      WHERE
+      t1.Gamemode = $gamemode AND t1.OficialGm = $oficialGm AND t1.Name LIKE $name
+      ${insertCreatorSql("t1.")}
+      group by
+          t1.id,
+          t1.name
+      having
+          count(t1.id) = ${selectedTags.length}
+      order by
+          t1.name asc
+      ;
+      `;
+  }
+  console.log(querry);
+  const stmt = db.prepare(querry);
+  console.log(stmt.getSQL());
+  stmt.bind({$name: name , $gamemode: Gamemode, $oficialGm: OficialGm});
+  while(stmt.step()) { //
+    const row = stmt.getAsObject();
+    console.log('Here is a row: ' + JSON.stringify(row));
+    const tableref = document.getElementById("paginationtb");
+    const tbrow = tableref.insertRow();
+    tbrow.classList.add("maprow");
+    const cell1= tbrow.insertCell();
+    const text1= document.createTextNode(row.Name);
+    cell1.appendChild(text1);
+    const stmt2 = db.prepare("SELECT * FROM MapCreators WHERE Id = $id");
+    //stmt2.bind({$id: row.CreatorId});
+    const row2 = stmt2.getAsObject({$id: row.CreatorId});
+    console.log(row2);
+    console.log(row.CreatorId);
+    const cell2= tbrow.insertCell();
+    const text2= document.createTextNode(row2.Name);
+    cell2.appendChild(text2);
+    const cell3= tbrow.insertCell();
+    cell3.innerHTML = row.Timestamp;
+    const cell4= tbrow.insertCell();
+    const stmt3 = db.prepare("SELECT * FROM MapTags_Map WHERE MapId = $id");
+    stmt3.bind({$id : row.Id});
+    const tagnames = [];
+    while(stmt3.step()){
+      const row3 = stmt3.getAsObject();
+      const stmt4 = db.prepare("SELECT Name FROM MapTags WHERE Id = $id");
+      const row4 = stmt4.getAsObject({$id : row3.TagId});
+      tagnames.push(row4.Name+`(${row3.TagId})`);
+      console.log("row3:"+ JSON.stringify(row4));
+    }
+    cell4.innerHTML = tagnames.join(";");
+
+
+  }
+}
+function oncreatorbtclick(){
+
+  //document.getElementById("dropdownC").style.display = "block";
+  const creatorname = document.getElementById("Creator").value;
+  //const stmt1 = db.prepare("SELECT * FROM MapCreators WHERE Name LIKE $name");
+  const stmt1 = db.prepare("SELECT * FROM MapCreators WHERE Name = $name");
+  stmt1.bind({$name: creatorname});
+  if(stmt1.step()){
+    //alert("good");
+    const row = stmt1.getAsObject();
+    sethiddenCreators(true);
+    const textname = document.createTextNode(creatorname);
+    const divname = document.createElement("div");
+    divname.appendChild(textname);
+    divname.classList.add("selecteditem");
+    document.getElementById("creatornamearea").appendChild(divname);
+    divname.onclick = ()=>{onRemoveBtClick()};
+    selectedCreator = row.Id;
+    creatorSelected = true;
+    console.log("id:"+selectedCreator);
+    console.log(row);
+  }else{
+    alert("bad");
+  }
+}
+function onRemoveBtClick(){
+    sethiddenCreators(false);
+    //document.getElementById("creatornamearea")
+    while(document.getElementById("creatornamearea").firstChild){
+      document.getElementById("creatornamearea").removeChild(document.getElementById("creatornamearea").firstChild);
+    }
+    creatorSelected = false;
+
+}
+function sethiddenCreators(hidden){
+  document.getElementById("Creator").hidden = false != hidden;
+  document.getElementById("bt_searchCreator").style.display = hidden ? "none" : "inline" ;
+  document.getElementById("bt_removeCreator").style.display = hidden ? "inline" : "none" ;
+}
+function insertCreatorSql(prefix = ""){
+  if(creatorSelected){
+    return "AND "+prefix+"CreatorId="+selectedCreator+" ";
+  }else {
+    return "";
+  }
+}
+function onInsertTag(){
+  const tag = document.getElementById("taginput").value;
+  if(tag != ""){
+    stmt = db.prepare("SELECT * FROM MapTags WHERE Name = $tagname ;");
+    stmt.bind({$tagname : tag});
+    if(stmt.step()){
+      const row = stmt.getAsObject();
+      selectedTags.push(row.Id);
+      const tagdiv = document.createElement("div");
+      tagdiv.innerHTML = tag;
+      tagdiv.classList.add("selecteditem");
+      tagdiv.onclick = ()=>{
+        const rindex = selectedTags.findIndex(element => element = row.Id);
+        if(rindex != -1)
+        selectedTags.splice(rindex,1);
+        document.getElementById("tagsArea").removeChild(tagdiv);
+      };
+      document.getElementById("tagsArea").appendChild(tagdiv);
+
+    }
+  }
+}
+</script>
+
+</head>
+<body>
+<div class="content">
+<div id="searchbar">
+  <div id="searchleft">
+    <table>
+      <tr>
+        <td>
+          Map Name:
+        </td>
+        <td>
+          <input id="Name" type="text">
+
+      </tr>
+      <tr>
+</td>
+                <td>
+          Map Creator:
+        </td>
+        <td>
+          <div id="creatornamearea"></div>
+          <input id="Creator" type="text">
+          <button type="button" id="bt_searchCreator" onclick="oncreatorbtclick()" class="button">Search</button>
+          <button style="display:none" id="bt_removeCreator" type="button" onclick="onRemoveBtClick()" class="button">REMOVE</button>
+          <div id="dropdownC">Search results:<BR></div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Oficial Gamemode:
+        </td>
+        <td>
+          <select id="OficialGm">
+            <option value="0"> DM/TM/RM/PM
+            </option>
+            <option value="1" selected="selected"> CTF
+            </option>
+            <option value="2"> HTF
+            </option>
+            <option value="3"> INF
+            </option>
+          </select>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Gamemode:
+        </td>
+        <td>
+          <select id="Gamemode">
+            <option value="0"> Oficial Gamemode
+            </option>
+            <option value="-1" selected="selected"> Climb
+            </option>
+            <option value="-2"> Coop Climb
+            </option>
+            <option value="-3"> M79 Coop Climb
+            </option>
+            <option value="-4"> M79 Climb
+            </option>
+          </select>
+        </td>
+      </tr>
+    </table>
+  </div>
+  <div id="searchright">
+    <table>
+    <tr>
+      <td>Tag:
+      </td>
+      <td>
+        <input type="text" id="taginput">
+        <button type="button" onclick="onInsertTag()" class="button">Insert tag</button>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        Tags:
+      </td>
+      <td id="tagsArea">
+      </td>
+    </tr>
+    </table>
+  </div>
+  <div id="searchbtarea">
+     <button type="button" onclick="onbtclick()" class="button">Search</button>
+  </div>
+</div>
+<div id="Pagination">
+  <table id="paginationtb" border="1" style="width: 94%; margin-left:3%;">
+    <tr>
+      <td style="width: 20%">
+        Name
+      </td>
+      <td style="width: 20%">
+        Creator
+      </td>
+      <td style="width: 20%">
+        Timestamp
+      </td>
+      <td style="width: 20%">
+        Tags
+      </td>
+    </tr>
+  </table>
+</div>
+</div>
+</body>
+<html>
