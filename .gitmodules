@@ -1,0 +1,3 @@
+[submodule "SoldatMapSearchTool"]
+	path = SoldatMapSearchTool
+	url = ./SoldatMapSearchTool
